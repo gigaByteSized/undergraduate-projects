@@ -1,0 +1,277 @@
+package miniproject;
+
+import java.util.ArrayList;
+import java.util.Random;
+import javafx.animation.AnimationTimer;
+import javafx.event.EventHandler;
+import javafx.scene.Scene;
+import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.Image;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.shape.Rectangle;
+import java.text.DecimalFormat;
+/*
+ * The GameTimer is a subclass of the AnimationTimer class. It must override the handle method.
+ */
+
+public class GameTimer extends AnimationTimer{
+	private GameStage gStage;
+	private double x = 0.0, y = 0.0, xP = 0.0, yP = 0.0;
+	private GraphicsContext gc;
+	private Scene theScene;
+	private Player playerOne;
+	private ArrayList<PlayerBlob> playerBlobs;
+	private ArrayList<FoodBlob> foodBlobs;
+	private ArrayList<EnemyBlob> enemyBlobs;
+	private long start;
+	private long finish;
+	private double timeElapsed;
+
+	private static final DecimalFormat df = new DecimalFormat("0.00");
+	public static final int MAX_NUM_ENEMY_BLOBS = 10; // 10 initially, change this later
+	public static final int MAX_NUM_FOOD_BLOBS = 200; // 10 initially, change this later
+	private static final Image BACKGROUND_IMAGE = new Image("images/map.png", GameStage.WORLD_HEIGHT, GameStage.WORLD_WIDTH,false,false);
+
+	GameTimer(GraphicsContext gc, Scene theScene, GameStage gStage){
+		this.gc = gc;
+		this.gStage = gStage;
+		this.theScene = theScene;
+		this.playerOne = new Player("playerOne", GameStage.WORLD_WIDTH/2 - GameStage.INIT_PLAYER_SIZE/2, GameStage.WORLD_HEIGHT/2 - GameStage.INIT_PLAYER_SIZE/2);
+
+		//instantiate the ArrayList of Fish
+		this.enemyBlobs = new ArrayList<EnemyBlob>();
+		this.foodBlobs = new ArrayList<FoodBlob>();
+		//call the spawnFishes method
+		this.spawnEnemyBlobs();
+		this.spawnFoodBlobs();
+		//call method to handle mouse click event
+		this.handleKeyPressEvent();
+		this.start = System.nanoTime();
+	}
+
+	@Override
+	public void handle(long currentNanoTime) {
+		this.gc.clearRect(0, 0, GameStage.WORLD_WIDTH,GameStage.WORLD_HEIGHT);
+		this.gc.setGlobalAlpha(0.1);
+		this.gc.drawImage(BACKGROUND_IMAGE,
+						 xOffset(x, this.playerOne.x) + GameStage.WINDOW_WIDTH/2 - this.playerOne.getSize()/2,
+						 -this.playerOne.y + GameStage.WINDOW_HEIGHT/2 - this.playerOne.getSize()/2,
+						 GameStage.WORLD_WIDTH,
+						 GameStage.WORLD_HEIGHT);
+						 
+						 //this.gc.drawImage(BACKGROUND_IMAGE,
+						 //800,
+						 //-800,
+						 //GameStage.WORLD_WIDTH,
+						 //GameStage.WORLD_HEIGHT);
+		this.gc.setGlobalAlpha(1.0);
+
+		//System.out.println(xOffset(x, this.playerOne.x));	
+		//System.out.println(xOffset(x, this.playerOne.x) + GameStage.WINDOW_WIDTH/2 - this.playerOne.getSize()/2);	
+		//System.out.println(this.playerOne.x);	
+		//System.out.println(this.playerOne.dx);
+		//call the methods to move the ship, bullets and fishes
+		this.playerOne.move();
+		this.movePlayerBlobs();
+		this.moveEnemyBlobs();
+
+		//render the player
+		this.playerOne.render(this.gc);
+
+		//call the render fishes and render bullets methods
+		this.renderEnemyBlobs();
+		this.renderFoodBlobs();
+		this.renderBullets();
+
+		//check collision of fishes ad ship
+		ArrayList<FoodBlob> fRemove = new ArrayList<FoodBlob>();
+		for(FoodBlob f: this.foodBlobs){
+			f.checkCollision(this.gStage, this, this.playerOne);
+			if(!f.isAlive()) fRemove.add(f);
+		} for(FoodBlob f: fRemove){
+			this.foodBlobs.remove(f);
+		}
+//
+//		if(!this.myShip.isAlive())
+//	        	this.stop();
+		//System.out.println(this.playerOne.getX());
+		//System.out.println(this.playerOne.getWidth());
+		//System.out.println(this.playerOne.getHeight());
+		//System.out.println("size: " + this.playerOne.getSize() + " | speed: " + this.playerOne.getSpeed());
+		//System.out.println(this.gStage.getScalePaneX());
+		//System.out.println(this.playerOne.x);
+		//double off = xOffset(x, this.playerOne.x) + GameStage.WINDOW_WIDTH/2 - this.playerOne.getSize()/2;
+
+		//System.out.println("x: " + playerOne.x + " | offset: " + off + " | size: " + playerOne.getSize());
+		System.out.println("x: " + this.x + " | y: " + this.y);
+	}
+
+	//method that will render/draw the fishes to the canvas
+	private void renderEnemyBlobs() {
+		for (EnemyBlob e : this.enemyBlobs){
+			e.render(this.gc, 0, 0, (int) (GameStage.WINDOW_WIDTH/2 - this.playerOne.x), (int) (GameStage.WINDOW_HEIGHT/2 - this.playerOne.y));
+		}
+	}
+
+	private void renderFoodBlobs() {
+		for (FoodBlob f : this.foodBlobs){
+			if(f.isAlive()){
+				f.render(this.gc, 0, 0,
+				(int) (GameStage.WINDOW_WIDTH/2 - this.playerOne.x) - this.playerOne.getSize()/2,
+				(int) (GameStage.WINDOW_HEIGHT/2 - this.playerOne.y)- this.playerOne.getSize()/2);
+			}
+			
+		}
+	}
+
+	//method that will render/draw the bullets to the canvas
+	private void renderBullets() {
+		for (PlayerBlob b : this.playerOne.getBullets()){
+	    	b.render(this.gc, 0, 0,
+			(int) (GameStage.WORLD_WIDTH/2 - this.playerOne.x),
+			(int) (GameStage.WORLD_HEIGHT/2 - this.playerOne.y));
+		}
+	}
+
+	//method that will spawn/instantiate three fishes at a random x,y location
+	private void spawnEnemyBlobs(){
+		Random r = new Random();
+
+		for(int i=0;i<GameTimer.MAX_NUM_ENEMY_BLOBS;i++){
+			int x = r.nextInt(GameStage.WORLD_WIDTH);
+			int y = r.nextInt(GameStage.WORLD_HEIGHT-50);
+			this.enemyBlobs.add(new EnemyBlob(x,y));
+			System.out.println("A fish has spawned.");
+		}
+
+	}
+
+	//method that will spawn/instantiate three fishes at a random x,y location
+	private void spawnFoodBlobs(){
+		Random r = new Random();
+
+		for(int i=0;i<GameTimer.MAX_NUM_FOOD_BLOBS;i++){
+			int x = r.nextInt(GameStage.WORLD_WIDTH-50);
+			int y = r.nextInt(GameStage.WORLD_HEIGHT-50);
+			this.foodBlobs.add(new FoodBlob(x,y));
+			System.out.println("A food has spawned.");
+		}
+
+	}
+
+	//method that will listen and handle the key press events
+	private void handleKeyPressEvent() {
+		theScene.setOnKeyPressed(new EventHandler<KeyEvent>(){
+			public void handle(KeyEvent e){
+            	KeyCode code = e.getCode();
+                moveMyBlob(code);
+			}
+
+		});
+
+		theScene.setOnKeyReleased(new EventHandler<KeyEvent>(){
+		            public void handle(KeyEvent e){
+		            	KeyCode code = e.getCode();
+		                stopMyBlob(code);
+		            }
+		        });
+    }
+
+	//method that will move the ship depending on the key pressed
+	private void moveMyBlob(KeyCode ke) {
+		if(ke==KeyCode.W){
+			this.playerOne.setDY(-(this.playerOne.getSpeed()));
+			//GameStage.
+			System.out.println(this.playerOne.getSpeed());
+			System.out.println(this.playerOne.width);
+			gc.translate(0, this.playerOne.getSpeed());
+
+		}
+
+		if(ke==KeyCode.A){
+			this.playerOne.setDX(-(this.playerOne.getSpeed()));
+		}
+
+		if(ke==KeyCode.S){
+			this.playerOne.setDY(this.playerOne.getSpeed());
+			System.out.println(this.playerOne.getSpeed());
+		}
+
+		if(ke==KeyCode.D){
+			this.playerOne.setDX(this.playerOne.getSpeed());
+			System.out.println(this.playerOne.getSpeed());
+		}
+
+		if(ke==KeyCode.SPACE){
+			this.playerOne.shoot();
+		}
+
+
+		System.out.println(ke+" key pressed.");
+   	}
+
+	//method that will stop the ship's movement; set the ship's DX and DY to 0
+	private void stopMyBlob(KeyCode ke){
+		this.playerOne.setDX(0.0);
+		this.playerOne.setDY(0.0);
+	}
+
+	//method that will move the bullets shot by a ship
+	private void movePlayerBlobs(){
+		//create a local arraylist of Bullets for the bullets 'shot' by the ship
+		ArrayList<PlayerBlob> bList = this.playerOne.getBullets();
+		/*
+		 * Loop through the bullet list and check whether a bullet is still visible.
+		 * If a bullet is visible, move the bullet, else, remove the bullet from the bullet array list.
+		 * */
+		for(int i = 0; i < bList.size(); i++){
+			PlayerBlob b = bList.get(i);
+			if(b.isVisible())
+				b.move();
+			else bList.remove(i);
+		}
+	}
+
+	//method that will move the fishes
+	private void moveEnemyBlobs(){
+		/*
+		 *Loop through the fishes array list
+		 *If a fish is alive, move the fish. Else, remove the fish from the fishes array list.
+		 */
+		for(int i = 0; i < this.enemyBlobs.size(); i++){
+			EnemyBlob f = this.enemyBlobs.get(i);
+			if(f.isAlive())
+        		f.move();
+        	else
+        		this.enemyBlobs.remove(i);
+		}
+	}
+
+	public double xOffset(Double x, Double offset){
+		x -= offset;
+		return x;
+	}
+
+	public double yOffset(Double y, Double offset){
+		y -= offset;
+		return y;
+	}
+
+	public double getX(){
+		return x;
+	}
+
+	public double getY(){
+		return y;
+	}
+
+	public void setX(double x){
+		this.x = x;
+	}
+
+	public void setY(double y){
+		this.y = y;
+	}
+
+}
